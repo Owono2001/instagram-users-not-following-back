@@ -1,3 +1,4 @@
+![Screenshot](https://github.com/j-archives/instagram-users-not-following-back/blob/main/users-who-do-not-fb-screenshot.png)
 # View Instagram Users Who Do Not Follow Back
 Install your data from Instagram and replace the follower_1.json and following_1.json with your follower_1.json and following.json.<br>
 The json files for followers and following can be found in 
