@@ -44,7 +44,7 @@ function getUsersWhoDonotFollowBack(){
     const usersWhoDontFollowBack = followingNames.filter(name => !followersNames.includes(name));
     if (usersWhoDontFollowBack.length > 0) {
       const formattedNames = usersWhoDontFollowBack.map(name => `@${name}`).join('<br>');
-      container.innerHTML += `<p>Users who don't follow back:<br>${formattedNames}</p>`;
+      container.innerHTML += `<p>${formattedNames}</p>`;
       console.log('Users who dont follow back:', usersWhoDontFollowBack);
     } else {
       console.log('No users who dont follow back found');
