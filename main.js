@@ -1,7 +1,7 @@
 // Assuming 'followers.json' is accessible at a URL
 const followersJSON = 'followers_1.json';
 const followingsJSON = 'following_1.json';
-const container = document.getElementById("container");
+const container = document.getElementById("users-list");
 
 const followingNames = [];
 const followersNames = [];
