@@ -7,6 +7,7 @@ After downloading the zip file and replacing the necessary files, you can now ru
 
 # Issues
 As of now, this can only handle small sets of data and cannot work on 1000+ following and followers.
+(based on my test)
 
 # Contribution
 Feel free to contribute to this project. Your help in developing and improving this means a lot!
