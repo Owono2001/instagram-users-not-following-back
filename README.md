@@ -1,7 +1,5 @@
 # ✨ Enhanced Instagram Non-Follower Finder ✨
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 This tool provides a fast, private, and visually appealing way to discover which Instagram accounts you follow that don't follow you back.
 
 **Built with ❤️ by Pedro Fabian Owono ([@Owono2001](https://github.com/Owono2001))**
@@ -105,14 +103,4 @@ Setting up is easy! You just need your Instagram data export.
 
 ---
 
-## 🤝 Contributing
 
-Contributions are welcome! Feel free to open an **Issue** to report bugs or suggest features, or submit a **Pull Request** with your improvements.
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the `LICENSE` file for details.
-
-*(**Note:** Please add a `LICENSE` file, e.g., containing the MIT License text, to your repository if you haven't already.)*
