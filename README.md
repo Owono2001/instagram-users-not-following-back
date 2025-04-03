@@ -8,7 +8,7 @@ This tool provides a fast, private, and visually appealing way to discover which
 
 ## 💐 Standing on the Shoulders of Giants! 💐
 
-This project is an enhanced fork, originally created by the talented **Judie Michelle Mosinabre** ([@judiemosinabre](https://github.com/judiemosinabre)). We extend our sincere gratitude for her foundational work! This version aims to build upon that solid base with improved performance, features, and a modern UI.
+This project is an enhanced fork, originally created by the talented **Judie Michelle Mosinabre** ([@judiemosinabre](https://github.com/judiemosinabre)). I extend my sincere gratitude for her foundational work! This version aims to build upon that solid base with improved performance, features, and a modern UI.
 
 ➡️ *Check out the original repository [here](https://github.com/judiemosinabre/instagram-users-not-following-back).*
 
