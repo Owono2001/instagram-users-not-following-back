@@ -22,7 +22,6 @@ This version significantly improves upon the original concept by:
 
 * **📊 Handling Larger Datasets:** Say goodbye to limitations! Analyzes much larger follower/following lists efficiently (tested well beyond the original 1000+ user benchmark).
 * **🎨 Stunning Modern UI:** A completely revamped interface that's clean, intuitive, and responsive.
-* **🌓 Light & Dark Theme Toggle:** Choose the look that suits your style with a smooth theme transition.
 * **🔍 Instant Search:** Quickly find specific users within the non-follower list.
 * **⇅ Flexible Sorting:** Sort the non-follower list alphabetically (A-Z or Z-A).
 * **📁 Versatile Export Options:** Export your non-follower list as `TXT`, `CSV`, or `JSON` files.
