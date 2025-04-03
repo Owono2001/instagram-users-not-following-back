@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="light-theme"> 
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,21 +8,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="styles.css"> 
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" title="Toggle Theme">
-        <i class="fas fa-moon theme-icon moon-icon"></i> 
-        <i class="fas fa-sun theme-icon sun-icon"></i>  
-    </button>
+        <i class="fas fa-moon"></i> <i class="fas fa-sun"></i>  </button>
 
     <div id="container">
 
-        <header class="header card">
-             <div class="header-content">
-                 <h1><i class="fab fa-instagram"></i> Follower Analysis</h1>
-                 <p class="subtitle">Discover who isn't following you back.</p>
-            </div>
+        <header class="header">
+            <h1><i class="fab fa-instagram"></i> Follower Analysis</h1>
             <div class="stats-box">
                 <div class="stat-item">
                     <span class="stat-number" id="totalFollowers">0</span>
@@ -32,120 +27,98 @@
                     <span class="stat-number" id="totalFollowing">0</span>
                     <span class="stat-label">Following</span>
                 </div>
-                <div class="stat-item important-stat"> {/* Highlight non-followers */}
-                    <span class="stat-number" id="nonFollowersCount">0</span> 
-                    <span class="stat-label">Not Following Back</span>
+                <div class="stat-item">
+                    <span class="stat-number" id="nonFollowersCount">0</span> <span class="stat-label">Non-Followers</span>
                 </div>
             </div>
         </header>
 
-        <div id="jsonSource" class="data-source card">
-             <h2><i class="fas fa-upload"></i> Upload Your Data</h2>
-            <p>Select your exported `followers_1.json` and `following.json` files from Instagram.</p>
+        <div id="jsonSource" class="data-source">
+            <p>Upload your exported `followers_1.json` and `following.json` files.</p>
             <div class="file-upload-area">
                 <div class="file-input-wrapper">
-                    <label for="followersFile" class="file-label btn">
+                    <label for="followersFile" class="file-label">
                         <i class="fas fa-users"></i> Choose Followers File...
                     </label>
                     <input type="file" id="followersFile" accept=".json">
                     <span class="file-name" id="followersFileName">No file selected</span>
                 </div>
                 <div class="file-input-wrapper">
-                    <label for="followingFile" class="file-label btn">
+                    <label for="followingFile" class="file-label">
                         <i class="fas fa-user-check"></i> Choose Following File...
                     </label>
                     <input type="file" id="followingFile" accept=".json">
                     <span class="file-name" id="followingFileName">No file selected</span>
                 </div>
             </div>
-             <p id="initial-load-error" class="error-message" style="display: none;">Could not load default JSON files. Please upload your files.</p>
         </div>
 
-        <div class="controls card">
-             <h2><i class="fas fa-filter"></i> Non-Follower List</h2>
-             <div class="controls-inner">
-                 <div class="search-box">
-                    <i class="fas fa-search search-icon"></i>
-                    <input type="text" id="searchInput" placeholder="Search non-followers...">
-                 </div>
-                 <div class="control-buttons">
-                    <button class="btn icon-btn" id="sortToggle" title="Toggle Sort Order">
-                         <i class="fas fa-sort-alpha-down sort-icon-down"></i>
-                         <i class="fas fa-sort-alpha-up sort-icon-up"></i>
-                         <span class="sort-text">Sort A-Z</span>
-                    </button>
-                    <button class="btn icon-btn primary-btn" id="exportButton" title="Export Non-followers List">
-                        <i class="fas fa-download"></i> Export List
-                    </button>
-                 </div>
+        <div class="controls">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search non-followers...">
+                <i class="fas fa-search search-icon"></i>
+            </div>
+            <div class="control-buttons">
+                <button class="btn" id="sortToggle" title="Toggle Sort Order">
+                    <i class="fas fa-sort-alpha-down"></i> Sort A-Z
+                </button>
+                <button class="btn" id="exportButton" title="Export Non-followers List">
+                    <i class="fas fa-download"></i> Export
+                </button>
             </div>
         </div>
 
-        <div id="users-list" class="card">
-             {/* Loader will be shown here by JS */}
-             <div class="list-placeholder">
-                 <i class="fas fa-list-alt"></i>
-                 <p>Upload files to see the list of users who don't follow you back.</p>
-            </div>
+        <div id="users-list">
+            <div class="loader">Loading data...</div>
         </div>
 
         <div id="exportModal" class="modal">
-            <div class="modal-content card">
+            <div class="modal-content">
                 <span class="close" title="Close Modal">&times;</span>
-                <h3><i class="fas fa-file-export"></i> Export Non-Followers</h3>
+                <h3>Export Non-Followers</h3>
                 <div class="export-options">
                     <div class="form-group">
-                        <label for="exportFormat"><i class="fas fa-file-alt"></i> Format:</label>
+                        <label for="exportFormat">Format:</label>
                         <select id="exportFormat">
                             <option value="txt">Text File (.txt)</option>
                             <option value="csv">CSV (.csv)</option>
                             <option value="json">JSON (.json)</option>
                         </select>
                     </div>
-                     {/* Removed placeholder options, adjust if functionality added later */}
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="includeDates">
+                        <label for="includeDates">Include detection date (Placeholder)</label>
+                    </div>
                     <div class="form-group checkbox-group">
                         <input type="checkbox" id="cleanUsernames">
                         <label for="cleanUsernames">Remove '@' symbol from usernames</label>
                     </div>
                 </div>
-                <h4><i class="fas fa-eye"></i> Preview:</h4>
+                <h4>Preview:</h4>
                 <pre id="exportPreview">[Preview will appear here]</pre>
-                <button id="performExportButton" class="btn export-btn primary-btn">
+                <button id="performExportButton" class="btn export-btn">
                     <i class="fas fa-file-download"></i> Confirm Export
                 </button>
             </div>
         </div>
 
         <section class="chart-container card">
-            <h3><i class="fas fa-chart-line"></i> Follow/Unfollow Timeline (Sample Data)</h3>
-             <p class="chart-notice">Note: Timeline requires historical data not present in standard exports. This chart uses sample data for demonstration.</p>
+            <h3>Follow/Unfollow Timeline (Sample Data)</h3>
             <div class="chart-wrapper">
-                 {/* Add a placeholder/loader for the chart */}
-                 <div class="chart-placeholder">
-                     <i class="fas fa-spinner fa-spin"></i> Loading Chart...
-                 </div>
                 <canvas id="followTimeline"></canvas>
             </div>
         </section>
 
         <section class="recommendations card">
             <h3><i class="fas fa-robot"></i> Smart Suggestions (Sample)</h3>
-             <p class="chart-notice">Based on the data, here are some potential insights (Sample).</p>
             <div id="aiSuggestions">
                 <p class="placeholder-text">Load data to see suggestions.</p>
             </div>
         </section>
 
-    </div> 
-    
-    {/* Toast Notification Container */}
-    <div id="toastContainer"></div>
+    </div> <script src="main.js"></script>
 
-    {/* Scripts */}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> 
-    <script src="main.js"></script>
     <script>
-         // Keep this script for immediate file name updates
         document.querySelectorAll('input[type="file"]').forEach(input => {
             input.addEventListener('change', function() {
                 const fileName = this.files[0] ? this.files[0].name : 'No file selected';
@@ -153,15 +126,7 @@
                 const targetElement = document.getElementById(targetId);
                 if (targetElement) {
                     targetElement.textContent = fileName;
-                     targetElement.classList.add('selected'); // Add class when selected
                 }
-                 // If you want to reset the other file name display when one is chosen:
-                 // const otherInputId = this.id === 'followersFile' ? 'followingFileName' : 'followersFileName';
-                 // const otherElement = document.getElementById(otherInputId);
-                 // if (otherElement && !document.getElementById(this.id === 'followersFile' ? 'followingFile' : 'followersFile').files[0]) {
-                 //     otherElement.textContent = 'No file selected';
-                 //      otherElement.classList.remove('selected');
-                 // }
             });
         });
     </script>

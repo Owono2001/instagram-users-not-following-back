@@ -3,10 +3,11 @@
  *
  * This script loads Instagram followers and following data (from JSON files),
  * identifies users who don't follow back, and provides
- * various features like search, sort, export, visualization, and theme toggling.
+ * various features like search, sort, export, and visualization.
  */
 
-// Wrap everything in an IIFE
+// Wrap everything in an IIFE (Immediately Invoked Function Expression)
+// to avoid polluting the global scope unnecessarily.
 (function() {
   'use strict';
 
@@ -15,15 +16,16 @@
   // -------------------------------------------------------------------------
 
   const CONFIG = {
+      // Default paths if loading static files (can be overridden by uploads)
       followersPath: 'followers_1.json',
-      followingPath: 'following.json',
-      batchSize: 500,
-      debounceTime: 300, // ms for search input debounce
-      toastDuration: 3000 // ms for toast notifications
+      followingPath: 'following.json', // Corrected common filename
+      batchSize: 500, // Process JSON data in chunks for performance
+      // apiClientId: 'YOUR_INSTAGRAM_API_CLIENT_ID', // API removed
+      // apiRedirectUri: window.location.origin + window.location.pathname // API removed
   };
 
-  const LOADER_HTML = `<div class="loader absolute"><div class="loader-inner">Loading data...</div></div>`; // Use absolute loader
-  const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js'; // Keep loading Chart.js
+  const LOADER_HTML = '<div class="loader">Loading data...</div>';
+  const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
 
   // -------------------------------------------------------------------------
   // SECTION: State Management
@@ -32,54 +34,52 @@
   let state = {
       followers: new Set(),
       following: new Set(),
+      // Store detailed user info if available, otherwise just usernames
+      // Example: { username: 'user1', profileUrl: '...', timestamp: 123... }
+      // For simplicity here based on original code, we'll store just usernames
+      // and derive the nonFollowers list from the sets.
       nonFollowers: [], // Array of usernames who don't follow back
-      uploadedFollowersData: null,
-      uploadedFollowingData: null,
-      sortAsc: true,
-      // Read theme from localStorage or default to light
+      uploadedFollowersData: null, // To store data from file uploads
+      uploadedFollowingData: null, // To store data from file uploads
+      sortAsc: true, // Sort order for the results list
       currentTheme: localStorage.getItem('theme') || 'light',
+      // currentDataSource: 'json', // Defaulting to JSON as API is removed
       isDataProcessing: false,
-      chartInstance: null,
-      // Store file load status for better feedback
-      followersFileLoaded: false,
-      followingFileLoaded: false,
+      chartInstance: null // To hold the Chart.js instance
   };
 
   // -------------------------------------------------------------------------
-  // SECTION: DOM Element References (Cache them)
+  // SECTION: DOM Element References
   // -------------------------------------------------------------------------
 
+  // Cache DOM elements for performance and easier access
   const dom = {
-      htmlElement: document.documentElement, // Target for theme class
       container: document.getElementById('users-list'),
-      listPlaceholder: document.querySelector('#users-list .list-placeholder'),
       searchInput: document.getElementById('searchInput'),
       stats: {
           followers: document.getElementById('totalFollowers'),
           following: document.getElementById('totalFollowing'),
-          nonFollowers: document.getElementById('nonFollowersCount')
+          nonFollowers: document.getElementById('nonFollowersCount') // Renamed for clarity
       },
-      themeToggleButton: document.getElementById('themeToggle'),
-      sortToggleButton: document.getElementById('sortToggle'),
-      sortToggleText: document.querySelector('#sortToggle .sort-text'),
-      exportButton: document.getElementById('exportButton'),
+      themeToggleButton: document.getElementById('themeToggle'), // Assume button exists
+      sortToggleButton: document.getElementById('sortToggle'), // Assume button exists
+      exportButton: document.getElementById('exportButton'), // Assume button exists
       exportModal: document.getElementById('exportModal'),
       exportPreview: document.getElementById('exportPreview'),
       exportFormatSelect: document.getElementById('exportFormat'),
-      exportCleanUsernamesCheckbox: document.getElementById('cleanUsernames'),
-      exportPerformButton: document.getElementById('performExportButton'),
-      exportModalCloseButton: document.querySelector('#exportModal .close'),
+      exportIncludeDatesCheckbox: document.getElementById('includeDates'), // Assuming these exist
+      exportCleanUsernamesCheckbox: document.getElementById('cleanUsernames'), // Assuming these exist
+      exportPerformButton: document.getElementById('performExportButton'), // Assuming this exists
+      exportModalCloseButton: document.querySelector('#exportModal .close'), // Assuming this exists
       timelineCanvas: document.getElementById('followTimeline'),
-      chartWrapper: document.querySelector('.chart-wrapper'), // Get wrapper for placeholder
-      chartPlaceholder: document.querySelector('.chart-placeholder'),
       aiSuggestionsContainer: document.getElementById('aiSuggestions'),
-      jsonSourceContainer: document.getElementById('jsonSource'),
+      // dataSourceButtons: document.querySelectorAll('.ds-btn'), // API removed
+      jsonSourceContainer: document.getElementById('jsonSource'), // Container for JSON upload
+      // apiSourceContainer: document.getElementById('apiSource'), // API removed
       followersFileInput: document.getElementById('followersFile'),
       followingFileInput: document.getElementById('followingFile'),
-      followersFileNameDisplay: document.getElementById('followersFileName'),
-      followingFileNameDisplay: document.getElementById('followingFileName'),
-      initialLoadErrorDisplay: document.getElementById('initial-load-error'),
-      toastContainer: document.getElementById('toastContainer') // Get existing container
+      // instagramLoginButton: document.getElementById('instagramLogin'), // API removed
+      toastContainer: null // Will be created dynamically
   };
 
   // -------------------------------------------------------------------------
@@ -87,75 +87,59 @@
   // -------------------------------------------------------------------------
 
   /**
-   * Main initialization function.
+   * Main initialization function, sets up the application.
    */
   async function initializeApp() {
-      // Don't show global loader immediately, handle section loaders
-      // showLoader(dom.container); // Example: Loader specific to user list
+      showLoader();
+      createToastContainer();
+      applyTheme(); // Apply initial theme
+      loadChartJs(); // Load Chart.js library
+      setupEventListeners(); // Setup all event listeners
 
-      // createToastContainer(); // Using existing container now
-      applyTheme(); // Apply initial theme *before* setup
-      // loadChartJs(); // Chart.js included via <script> tag now
-      setupEventListeners();
+      // API related initialization removed
 
-      // Clear file input values on page load in case of refresh
-      if (dom.followersFileInput) dom.followersFileInput.value = null;
-      if (dom.followingFileInput) dom.followingFileInput.value = null;
+      // Always use JSON source now
+      // setDataSourceInternal('json'); // No need to switch, default is JSON
+
+      // Attempt to load static JSON files by default
+      // File uploads will override this if used
+      try {
+          await Promise.all([
+              loadStaticJsonData(CONFIG.followersPath, processFollowerData),
+              loadStaticJsonData(CONFIG.followingPath, processFollowingData)
+          ]);
+          processLoadedData(); // Process data from static files
+      } catch (error) {
+          // Don't show fatal error yet, user might upload files
+          console.warn(`Could not load static JSON files: ${error.message}`);
+          showError("Could not load default JSON files. Please upload your files.", false); // Non-fatal error
+          clearLoader(); // Clear loader if static load fails
+      }
 
 
-      // Attempt to load static JSON files (optional, maybe remove if only uploads are desired)
-      // try {
-      //     console.log("Attempting to load static JSON files...");
-      //     await Promise.allSettled([ // Use allSettled to handle potential failures gracefully
-      //         loadStaticJsonData(CONFIG.followersPath, processFollowerData, 'followers'),
-      //         loadStaticJsonData(CONFIG.followingPath, processFollowingData, 'following')
-      //     ]);
-      //     if (state.followersFileLoaded && state.followingFileLoaded) {
-      //         console.log("Static files loaded successfully.");
-      //         processLoadedData();
-      //     } else {
-      //          console.warn("Could not load one or both static JSON files.");
-      //          showInitialLoadError();
-      //     }
-      // } catch (error) { // Should not happen with allSettled unless fetch itself fails badly
-      //     console.error(`Error during static JSON loading: ${error.message}`);
-      //     showInitialLoadError();
-      // }
-
-      // Render initial state of UI elements
-       updateStatistics(); // Show 0s initially
-      renderFollowTimeline(); // Render empty/placeholder chart
-      generateSmartSuggestions(); // Render placeholder suggestions
-      updateSortButtonUI(); // Set initial sort button text/icons
-       // Display initial placeholder in list if not loading
-      if (!state.isDataProcessing && dom.listPlaceholder) {
-          dom.listPlaceholder.style.display = 'flex';
+      // Initial render of placeholders if no data loaded yet
+      if (state.followers.size === 0 && state.following.size === 0) {
+          renderFollowTimeline(); // Render empty/placeholder chart
+          generateSmartSuggestions(); // Render placeholder suggestions
       }
   }
 
-  /** Dynamically loading Chart.js (if preferred over script tag)
-   function loadChartJs() {
-      if (typeof Chart === 'undefined' && !document.querySelector(`script[src="${CHART_JS_URL}"]`)) {
+  /**
+   * Loads the Chart.js library dynamically.
+   */
+  function loadChartJs() {
+      if (!document.querySelector(`script[src="${CHART_JS_URL}"]`)) {
           const chartScript = document.createElement('script');
           chartScript.src = CHART_JS_URL;
-          chartScript.onload = () => {
-              console.log("Chart.js loaded dynamically.");
-              // Potentially re-render chart if data is ready
-              if (state.nonFollowers.length > 0 || state.followers.size > 0) {
-                 renderFollowTimeline();
-              }
-          };
           chartScript.onerror = () => {
               console.error("Failed to load Chart.js");
               showToast("Could not load charting library.", "error");
-              if(dom.chartPlaceholder) dom.chartPlaceholder.innerHTML = '<p>Failed to load Chart library.</p>';
           };
           document.head.appendChild(chartScript);
-      } else if (typeof Chart !== 'undefined') {
-          console.log("Chart.js already available.");
       }
   }
-  */
+
+
 
   // -------------------------------------------------------------------------
   // SECTION: Event Listener Setup
@@ -169,20 +153,35 @@
           dom.sortToggleButton.addEventListener('click', toggleSort);
       }
       if (dom.searchInput) {
-          dom.searchInput.addEventListener('input', debounce(handleSearchInput, CONFIG.debounceTime));
+          dom.searchInput.addEventListener('input', debounce(renderResults, 300)); // Debounce search
       }
       if (dom.exportButton) {
           dom.exportButton.addEventListener('click', showExportModal);
       }
       if (dom.exportModalCloseButton) {
-          dom.exportModalCloseButton.addEventListener('click', hideExportModal);
+          dom.exportModalCloseButton.addEventListener('click', () => dom.exportModal.style.display = 'none');
       }
-      if (dom.exportPerformButton) {
+       if (dom.exportPerformButton) {
           dom.exportPerformButton.addEventListener('click', performExport);
       }
-      // Update preview on option change
+      // Add listeners for export options changing the preview
       if (dom.exportFormatSelect) dom.exportFormatSelect.addEventListener('change', updateExportPreview);
+      if (dom.exportIncludeDatesCheckbox) dom.exportIncludeDatesCheckbox.addEventListener('change', updateExportPreview);
       if (dom.exportCleanUsernamesCheckbox) dom.exportCleanUsernamesCheckbox.addEventListener('change', updateExportPreview);
+
+
+      // Data source switching removed as only JSON is available
+      /*
+      dom.dataSourceButtons.forEach(button => {
+          button.addEventListener('click', (event) => {
+              const source = event.target.getAttribute('data-source');
+              if (source) {
+                  setDataSourceInternal(source, true); // User initiated switch
+                  // API related logic removed
+              }
+          });
+      });
+      */
 
       // File Upload listeners
       if (dom.followersFileInput) {
@@ -192,7 +191,14 @@
           dom.followingFileInput.addEventListener('change', handleFileUpload);
       }
 
-      // Event delegation for copy buttons
+      // API Login Button Listener Removed
+      /*
+       if (dom.instagramLoginButton) {
+           dom.instagramLoginButton.addEventListener('click', redirectToInstagramAuth);
+       }
+      */
+
+      // Event delegation for copy buttons in the user list
       if (dom.container) {
           dom.container.addEventListener('click', (event) => {
               const button = event.target.closest('.copy-btn');
@@ -205,21 +211,21 @@
           });
       }
 
-      // Event delegation for AI suggestion buttons (if actions added later)
-      // if (dom.aiSuggestionsContainer) {
-      //     dom.aiSuggestionsContainer.addEventListener('click', (event) => {
-      //         const button = event.target.closest('.ai-action-btn');
-      //         if (button) {
-      //             const actionName = button.getAttribute('data-action');
-      //             handleAiAction(actionName); // Define handleAiAction if needed
-      //         }
-      //     });
-      // }
+      // Event delegation for AI suggestion buttons
+      if (dom.aiSuggestionsContainer) {
+          dom.aiSuggestionsContainer.addEventListener('click', (event) => {
+               const button = event.target.closest('.ai-action-btn');
+               if (button) {
+                   const actionName = button.getAttribute('data-action');
+                   handleAiAction(actionName);
+               }
+          });
+      }
 
-      // Close modal if clicked outside content
+      // Close modal if clicked outside
       window.addEventListener('click', (event) => {
           if (event.target === dom.exportModal) {
-              hideExportModal();
+              dom.exportModal.style.display = 'none';
           }
       });
   }
@@ -228,47 +234,31 @@
   // SECTION: Data Loading & Parsing (JSON Focused)
   // -------------------------------------------------------------------------
 
-   /**
-    * Handles search input, triggers rendering.
-    */
-    function handleSearchInput() {
-        renderResults(); // Re-render the list based on the search term
-    }
+  /**
+   * Fetches JSON data from a static URL and processes it.
+   * @param {string} url - The URL of the JSON file.
+   * @param {Function} processor - Function to process each item in the JSON array.
+   */
+  async function loadStaticJsonData(url, processor) {
+      if (state.isDataProcessing) return; // Prevent concurrent processing
+      state.isDataProcessing = true;
 
+      try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-   /**
-     * Fetches JSON data from a static URL. (Optional - if using default files)
-     * @param {string} url - The URL of the JSON file.
-     * @param {Function} processor - Function to process each item.
-     * @param {string} type - 'followers' or 'following'.
-    */
-    async function loadStaticJsonData(url, processor, type) {
-        // Removed batch processing here for simplicity with static files,
-        // assuming they are reasonably sized. Re-add if needed.
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status} for ${url}`);
-            }
-            const data = await response.json();
-            const dataArray = extractDataArray(data); // Use helper function
+          const data = await response.json();
+          // Handle potential object wrapping (e.g., { relationships_followers: [...] })
+          const dataArray = Array.isArray(data) ? data : data[Object.keys(data)[0]];
+          if (!Array.isArray(dataArray)) throw new Error('JSON data is not an array.');
 
-            if (type === 'followers') {
-                processFollowerData({ string_list_data: dataArray.flatMap(item => item.string_list_data || []) });
-                state.followersFileLoaded = true;
-            } else {
-                processFollowingData({ string_list_data: dataArray.flatMap(item => item.string_list_data || []) });
-                state.followingFileLoaded = true;
-            }
-            console.log(`Successfully loaded and processed static ${type} data.`);
-
-        } catch (error) {
-            console.error(`Failed to load or parse static ${type} file (${url}): ${error.message}`);
-            // Don't show fatal error here, let initializeApp handle overall status
-             state[type === 'followers' ? 'followersFileLoaded' : 'followingFileLoaded'] = false; // Mark as failed
-             throw error; // Re-throw to be caught by Promise.allSettled
-        }
-    }
+          await processInBatches(dataArray, processor);
+      } catch (error) {
+          throw new Error(`Failed to load or parse ${url}: ${error.message}`);
+      } finally {
+           state.isDataProcessing = false;
+      }
+  }
 
   /**
    * Handles file selection from input elements.
@@ -279,112 +269,53 @@
       if (!file) return;
 
       const type = event.target.id.includes('followers') ? 'followers' : 'following';
-      const containerToShowLoader = dom.jsonSourceContainer; // Show loader in the upload area
-      showLoader(containerToShowLoader);
+      showLoader(); // Show loader during file processing
 
       try {
           const data = await parseJsonFile(file);
-          const dataArray = extractDataArray(data); // Use helper function
+           // Handle potential object wrapping
+          const dataArray = Array.isArray(data) ? data : data[Object.keys(data)[0]];
+          if (!Array.isArray(dataArray)) throw new Error('Uploaded JSON is not an array.');
 
-          // Clear previous data for this type before processing new file
           if (type === 'followers') {
-              state.followers.clear();
-              state.uploadedFollowersData = dataArray; // Keep raw structure if needed
-              processFollowerDataBatch(dataArray); // Process immediately
-              state.followersFileLoaded = true;
-              dom.followersFileNameDisplay.textContent = file.name; // Update display again to be sure
-              dom.followersFileNameDisplay.classList.add('selected');
+              state.uploadedFollowersData = dataArray;
+              processFollowerDataBatch(state.uploadedFollowersData); // Process immediately
           } else {
-              state.following.clear();
-              state.uploadedFollowingData = dataArray; // Keep raw structure if needed
-              processFollowingDataBatch(dataArray); // Process immediately
-              state.followingFileLoaded = true;
-              dom.followingFileNameDisplay.textContent = file.name;
-              dom.followingFileNameDisplay.classList.add('selected');
+              state.uploadedFollowingData = dataArray;
+               processFollowingDataBatch(state.uploadedFollowingData); // Process immediately
           }
-
-          showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} file "${file.name}" loaded.`, "success");
-          checkAllDataReady(); // Check if both files are now loaded
-
+          checkUploadedDataReady();
       } catch (error) {
-          showError(`Error processing ${type} file "${file.name}": ${error.message}`, true); // Show as toast
-          // Clear the file input value and reset display
+          showError(`Invalid ${type} file "${file.name}": ${error.message}`);
+          // Clear the file input value to allow re-selection of the same file
           event.target.value = null;
-           const fileNameDisplay = type === 'followers' ? dom.followersFileNameDisplay : dom.followingFileNameDisplay;
-           if (fileNameDisplay) {
-                fileNameDisplay.textContent = 'No file selected';
-                fileNameDisplay.classList.remove('selected');
-           }
-          // Mark as not loaded
-          state[type === 'followers' ? 'followersFileLoaded' : 'followingFileLoaded'] = false;
-
-      } finally {
-          clearLoader(containerToShowLoader);
+          clearLoader();
       }
   }
 
-    /**
-    * Helper to extract the core data array, handling potential object wrapping.
-    * Expects [{string_list_data: [...]}, ...] or { relationships_followers: [{string_list_data: [...]}, ...]} etc.
-    * @param {any} data - Parsed JSON data.
-    * @returns {Array} - The extracted array of relationship items.
-    */
-   function extractDataArray(data) {
-        if (Array.isArray(data)) {
-            return data; // Already an array
-        }
-        if (typeof data === 'object' && data !== null) {
-            // Check for common Instagram export keys
-            const potentialKeys = ['relationships_followers', 'relationships_following', 'relationships_unfollowed_users', 'string_map_data'];
-            for (const key of potentialKeys) {
-                if (Array.isArray(data[key])) {
-                    return data[key];
-                }
-            }
-            // Fallback: Check if the first property is an array
-            const firstKey = Object.keys(data)[0];
-            if (firstKey && Array.isArray(data[firstKey])) {
-                return data[firstKey];
-            }
-        }
-        // If it's neither an array nor a recognized wrapped object, throw error
-        throw new Error('JSON data structure not recognized. Expected an array or a common wrapper object (e.g., { relationships_followers: [...] }).');
-   }
-
-  /**
-   * Processes a batch of follower data (from upload).
-   * Expects dataArray = [{string_list_data: [{value:'user',...},...]}, ...]
+   /**
+   * Processes a batch of follower data (typically from upload).
    * @param {Array} dataArray - Array of follower relationship items.
    */
   function processFollowerDataBatch(dataArray) {
-      state.followers.clear(); // Ensure it's clear before adding
-      // The actual user info is nested within string_list_data
-      dataArray.forEach(item => {
-          item?.string_list_data?.forEach(entry => {
-              if (entry?.value) {
-                  state.followers.add(entry.value.toLowerCase());
-              }
-          });
-      });
-      console.log(`Processed ${state.followers.size} followers from file.`);
+      state.followers.clear(); // Clear previous data if reprocessing
+      // Instagram JSON structure has 'string_list_data' inside each item
+      processFollowerData({ string_list_data: dataArray.flatMap(item => item.string_list_data || []) });
+      console.log(`Processed ${state.followers.size} followers from upload.`);
   }
 
   /**
-   * Processes a batch of following data (from upload).
-   * Expects dataArray = [{string_list_data: [{value:'user',...},...]}, ...]
+   * Processes a batch of following data (typically from upload).
    * @param {Array} dataArray - Array of following relationship items.
    */
   function processFollowingDataBatch(dataArray) {
-      state.following.clear(); // Ensure it's clear
-      dataArray.forEach(item => {
-          item?.string_list_data?.forEach(entry => {
-              if (entry?.value) {
-                  state.following.add(entry.value.toLowerCase());
-              }
-          });
-      });
-      console.log(`Processed ${state.following.size} following from file.`);
+      state.following.clear(); // Clear previous data if reprocessing
+      // Instagram JSON structure might be different for following, adjust if necessary
+      // Assuming similar structure:
+      processFollowingData({ string_list_data: dataArray.flatMap(item => item.string_list_data || []) });
+      console.log(`Processed ${state.following.size} following from upload.`);
   }
+
 
   /**
    * Parses a JSON file using FileReader.
@@ -397,68 +328,97 @@
           reader.onload = e => {
               try {
                   if (e.target && typeof e.target.result === 'string') {
-                      resolve(JSON.parse(e.target.result));
+                       resolve(JSON.parse(e.target.result));
                   } else {
-                      reject(new Error("Failed to read file content."));
+                       reject(new Error("Failed to read file content."));
                   }
               } catch (error) {
-                  reject(new Error(`Invalid JSON: ${error.message}`));
+                  reject(new Error(`JSON Parse Error: ${error.message}`));
               }
           };
-          reader.onerror = (e) => reject(new Error(`File Read Error: ${reader.error || 'Unknown error'}`));
+           reader.onerror = (e) => reject(new Error(`File Read Error: ${reader.error || 'Unknown error'}`));
           reader.readAsText(file);
       });
   }
 
-   /**
-    * Process data items potentially found directly in the root array
-    * Used by the static file loader which might point directly to string_list_data
-    * @param {object} item - A relationship item {timestamp: ..., value: '...', href: '...'}
-    */
-   function processFollowerData(item) {
-        // Adapting for potential direct item processing if static files are structured differently
-        if (item?.string_list_data) { // Handle the standard wrapper object
-            item.string_list_data?.forEach(entry => {
-                if (entry?.value) {
-                    state.followers.add(entry.value.toLowerCase());
-                }
-            });
-        } else if (item?.value) { // Handle a direct entry item
-             state.followers.add(item.value.toLowerCase());
-        }
-   }
+  /**
+   * Processes an array of data in batches to avoid blocking the UI thread.
+   * @param {Array} data - The array of data to process.
+   * @param {Function} processor - The function to call for each item.
+   * @returns {Promise<void>}
+   */
+  function processInBatches(data, processor) {
+      return new Promise(resolve => {
+          let index = 0;
+          const totalItems = data.length;
 
-   /**
-    * Process data items potentially found directly in the root array
-    * @param {object} item - A relationship item {timestamp: ..., value: '...', href: '...'}
-    */
-   function processFollowingData(item) {
-       if (item?.string_list_data) { // Handle the standard wrapper object
-            item.string_list_data?.forEach(entry => {
-                if (entry?.value) {
-                    state.following.add(entry.value.toLowerCase());
-                }
-            });
-       } else if (item?.value) { // Handle a direct entry item
-             state.following.add(item.value.toLowerCase());
-       }
-   }
+          function processBatch() {
+              const end = Math.min(index + CONFIG.batchSize, totalItems);
+              for (; index < end; index++) {
+                  try {
+                       processor(data[index]);
+                  } catch (e) {
+                       console.warn("Error processing item:", data[index], e);
+                  }
+              }
 
+              // Update progress (optional)
+               // updateProgressIndicator(index, totalItems);
+
+              if (index < totalItems) {
+                  setTimeout(processBatch, 0); // Yield to UI thread
+              } else {
+                  resolve();
+              }
+          }
+          processBatch();
+      });
+  }
 
   /**
-   * Checks if both follower and following data are ready (from any source).
-   * If ready, triggers the main analysis and UI update.
+   * Extracts follower usernames from a data item.
+   * Adds valid usernames to the state.followers Set.
+   * @param {object} item - A relationship item from the followers JSON. Needs string_list_data property.
    */
-  function checkAllDataReady() {
-      if (state.followersFileLoaded && state.followingFileLoaded) {
-          showToast("Both files loaded. Analyzing...", "info");
+  function processFollowerData(item) {
+      // Expecting item = { string_list_data: [{timestamp: ..., value: '...', href: '...'}, ...] }
+      item.string_list_data?.forEach(entry => {
+          if (entry?.value) {
+              state.followers.add(entry.value.toLowerCase());
+          }
+      });
+  }
+
+  /**
+   * Extracts following usernames from a data item.
+   * Adds valid usernames to the state.following Set.
+   * @param {object} item - A relationship item from the following JSON. Needs string_list_data property.
+   */
+  function processFollowingData(item) {
+      // Expecting item = { string_list_data: [{timestamp: ..., value: '...', href: '...'}, ...] }
+      item.string_list_data?.forEach(entry => {
+           if (entry?.value) {
+              state.following.add(entry.value.toLowerCase());
+          }
+      });
+  }
+
+   /**
+   * Checks if both follower and following data have been loaded (from uploads).
+   * If ready, triggers the main data processing and UI update.
+   */
+  function checkUploadedDataReady() {
+      if (state.uploadedFollowersData && state.uploadedFollowingData) {
+          showToast("Files loaded. Processing data...", "info");
+          // Data has already been processed into sets by processFollower/FollowingDataBatch
           processLoadedData();
-      } else if (state.followersFileLoaded) {
-          showToast("Followers file loaded. Upload the 'following.json' file.", "info");
-      } else if (state.followingFileLoaded) {
-          showToast("Following file loaded. Upload the 'followers_1.json' file.", "info");
+      } else if (state.uploadedFollowersData) {
+           showToast("Followers file loaded. Please upload the following file.", "info");
+           clearLoader(); // Clear loader while waiting for the other file
+      } else if (state.uploadedFollowingData) {
+          showToast("Following file loaded. Please upload the followers file.", "info");
+          clearLoader(); // Clear loader while waiting for the other file
       }
-      // else: neither file loaded yet, do nothing
   }
 
   // -------------------------------------------------------------------------
@@ -466,124 +426,97 @@
   // -------------------------------------------------------------------------
 
   /**
-   * Calculates the list of users who don't follow back.
+   * Calculates the list of users who are being followed but don't follow back.
+   * Updates the state.nonFollowers array.
    */
   function calculateNonFollowers() {
-      // Ensure Sets are populated before calculation
-      if (state.following.size === 0) {
-          console.warn("Following list is empty, cannot calculate non-followers.");
-          state.nonFollowers = [];
-          return;
-      }
-       // Followers list might be empty, that's okay (means everyone you follow doesn't follow back)
-
       state.nonFollowers = [...state.following].filter(user => !state.followers.has(user));
-      sortNonFollowers(); // Apply initial sort
+      // Sort initially based on current sort state
+      state.nonFollowers.sort((a, b) => state.sortAsc ? a.localeCompare(b) : b.localeCompare(a));
       console.log(`Calculated ${state.nonFollowers.length} non-followers.`);
   }
 
-    /**
-    * Sorts the state.nonFollowers array based on state.sortAsc.
-    */
-   function sortNonFollowers() {
-        state.nonFollowers.sort((a, b) => {
-            const compare = a.localeCompare(b);
-            return state.sortAsc ? compare : -compare;
-        });
-   }
 
   /**
-   * Central function called after both data sets are loaded.
-   */
+  * Central function called after data is loaded (from static files or uploads).
+  * Calculates differences and updates the entire UI.
+  */
   function processLoadedData() {
-      if (!state.followersFileLoaded || !state.followingFileLoaded) {
-          console.log("Waiting for both follower and following data.");
-          return;
+      if (state.followers.size === 0 || state.following.size === 0) {
+          console.log("Waiting for both follower and following data to be loaded.");
+          return; // Don't proceed if one set is empty
       }
-       if (state.isDataProcessing) return; // Prevent double processing
 
-       state.isDataProcessing = true;
-      showLoader(dom.container); // Show loader in the results list area
-
-      try {
-            calculateNonFollowers();
-            updateStatistics();
-            renderResults(); // Render the list
-            renderFollowTimeline(); // Update the chart
-            generateSmartSuggestions(); // Update suggestions
-            showToast("Analysis complete!", "success");
-            if (dom.listPlaceholder) dom.listPlaceholder.style.display = 'none'; // Hide placeholder
-      } catch (error) {
-            console.error("Error during final data processing:", error);
-            showError("An error occurred during analysis.", true);
-            if (dom.listPlaceholder) dom.listPlaceholder.style.display = 'flex'; // Show placeholder on error
-      } finally {
-            clearLoader(dom.container);
-            state.isDataProcessing = false;
-      }
+      showLoader(); // Ensure loader is visible during processing
+      calculateNonFollowers();
+      updateStatistics();
+      renderResults(); // Render the list of non-followers
+      renderFollowTimeline(); // Update or render the chart
+      generateSmartSuggestions(); // Update suggestions based on data
+      clearLoader(); // Hide loader after processing and rendering
+      showToast("Analysis complete!", "success");
   }
+
+
+  // -------------------------------------------------------------------------
+  // SECTION: API Integration (REMOVED)
+  // -------------------------------------------------------------------------
+
+  // Functions redirectToInstagramAuth, handleAPIAuth, getAccessToken,
+  // fetchRelationships, processAPIData have been removed or commented out.
+
 
   // -------------------------------------------------------------------------
   // SECTION: UI Rendering & Updates
   // -------------------------------------------------------------------------
 
   /**
-   * Updates the statistics display.
+   * Updates the statistics displayed on the page.
    */
   function updateStatistics() {
       if (!dom.stats.followers || !dom.stats.following || !dom.stats.nonFollowers) return;
-      // Animate the numbers changing? (Optional enhancement)
       dom.stats.followers.textContent = state.followers.size;
       dom.stats.following.textContent = state.following.size;
       dom.stats.nonFollowers.textContent = state.nonFollowers.length;
   }
 
   /**
-   * Renders the list of non-followers.
+   * Renders the list of non-followers in the container.
+   * Applies current search filter and sort order.
    */
   function renderResults() {
       if (!dom.container) return;
 
-      // Ensure data has been processed before rendering
-       // Don't render if still waiting for files
-       if (!state.followersFileLoaded || !state.followingFileLoaded || state.isDataProcessing) {
-           // If placeholder exists, ensure it's visible unless loading
-           if (dom.listPlaceholder && !state.isDataProcessing) {
-               dom.listPlaceholder.style.display = 'flex';
-               dom.container.innerHTML = ''; // Clear any previous list items
-               dom.container.appendChild(dom.listPlaceholder); // Make sure it's there
-           } else if (!dom.listPlaceholder && !state.isDataProcessing){
-                // Fallback if placeholder was removed somehow
-               dom.container.innerHTML = '<p class="info">Upload files to begin.</p>';
-           }
-           // If loading, the loader should be visible already
-           return;
-       }
+      // Get search term
+      const searchTerm = dom.searchInput ? dom.searchInput.value.toLowerCase() : '';
 
+      // Filter users based on search term
+      const filteredUsers = state.nonFollowers.filter(user =>
+          user.toLowerCase().includes(searchTerm)
+      );
 
-      const searchTerm = dom.searchInput ? dom.searchInput.value.toLowerCase().trim() : '';
-      const filteredUsers = searchTerm
-          ? state.nonFollowers.filter(user => user.toLowerCase().includes(searchTerm))
-          : [...state.nonFollowers]; // Use a copy if no search term
+      // Sort the filtered list (state.nonFollowers is already sorted, but filter changes order)
+      filteredUsers.sort((a, b) => state.sortAsc ? a.localeCompare(b) : b.localeCompare(a));
 
-      // No need to re-sort here if state.nonFollowers is always kept sorted
-      // filteredUsers.sort((a, b) => state.sortAsc ? a.localeCompare(b) : b.localeCompare(a));
-
-       // Clear previous results OR the placeholder
+      // Clear previous results
       dom.container.innerHTML = '';
-      if (dom.listPlaceholder) dom.listPlaceholder.style.display = 'none';
-
 
       if (filteredUsers.length === 0) {
           if (state.nonFollowers.length > 0 && searchTerm) {
               dom.container.innerHTML = '<p class="info">No users match your search.</p>';
-          } else if (state.nonFollowers.length === 0 && (state.followers.size > 0 || state.following.size > 0)) {
-               // Only show if data was loaded and nonFollowers is genuinely zero
-              dom.container.innerHTML = '<p class="info">🎉 Good news! Everyone you follow follows you back.</p>';
+          } else if (state.followers.size > 0 || state.following.size > 0) {
+               // Only show "Everyone follows back" if data was actually processed
+               dom.container.innerHTML = '<p class="info">Everyone you follow follows you back! 🎉</p>';
           } else {
-              // Fallback / Initial state message (should ideally be handled by placeholder)
-              dom.container.innerHTML = '<p class="info">Upload your followers & following JSON files to see results.</p>';
-               if (dom.listPlaceholder) dom.listPlaceholder.style.display = 'flex'; // Show placeholder again
+               // Initial state or error state before data load
+               // Keep the loader or initial message if appropriate
+               if (!state.isDataProcessing && dom.container.querySelector('.loader')) {
+                    dom.container.innerHTML = '<p class="info">Upload your followers & following JSON files to begin.</p>';
+               } else if (!dom.container.querySelector('.loader')) {
+                    // If loader was cleared due to an error or initial load failure
+                    dom.container.innerHTML = '<p class="info">Upload your followers & following JSON files to begin.</p>';
+               }
+               // Otherwise, let the loader stay if it's still processing
           }
       } else {
           const fragment = document.createDocumentFragment();
@@ -595,466 +528,522 @@
       }
   }
 
-  /**
-   * Creates a DOM element for a single user.
-   * @param {string} username - The username.
-   * @returns {HTMLElement} - The user element (div).
-   */
-  function createUserElement(username) {
-      const userDiv = document.createElement('div');
-      userDiv.className = 'user-item'; // Use card styling from CSS
-
-      const userInfo = document.createElement('div');
-      userInfo.className = 'user-info';
-
-      const userLink = document.createElement('a');
-      userLink.href = `https://www.instagram.com/${username}/`;
-      userLink.textContent = `@${username}`;
-      userLink.target = '_blank';
-      userLink.rel = 'noopener noreferrer';
-      userLink.title = `View @${username} on Instagram`;
-
-      userInfo.appendChild(userLink);
-      userDiv.appendChild(userInfo);
-
-      const userActions = document.createElement('div');
-      userActions.className = 'user-actions';
-
-      // Copy Button
-      const copyButton = document.createElement('button');
-      copyButton.className = 'btn-small copy-btn';
-      copyButton.title = `Copy @${username}`;
-      copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy';
-      copyButton.setAttribute('data-username', username);
-      userActions.appendChild(copyButton);
-
-      // Optional: Add placeholder 'Unfollow' button that just opens profile
-       const openProfileButton = document.createElement('button');
-       openProfileButton.className = 'btn-small'; // Use default secondary style
-       openProfileButton.title = `Open @${username}'s profile`;
-       openProfileButton.innerHTML = '<i class="fas fa-external-link-alt"></i> Profile';
-       openProfileButton.onclick = () => window.open(userLink.href, '_blank');
-       userActions.appendChild(openProfileButton);
-
-
-      userDiv.appendChild(userActions);
-      return userDiv;
-  }
-
-  /**
-   * Copies username to clipboard.
-   * @param {string} username - Username to copy.
-   */
-  function copyUsername(username) {
-      if (!navigator.clipboard) {
-          showToast('Clipboard API not available in this browser.', 'error');
-          return;
-      }
-      navigator.clipboard.writeText(`@${username}`)
-          .then(() => {
-              showToast(`Copied @${username}!`, 'success');
-          })
-          .catch(err => {
-              console.error('Failed to copy username: ', err);
-              showToast('Failed to copy username.', 'error');
-          });
-  }
 
    /**
-    * Shows the initial load error message.
+    * Creates a DOM element representing a single user.
+    * @param {string} username - The username to display.
+    * @returns {HTMLElement} - The created user element (div).
     */
-   function showInitialLoadError() {
-       if (dom.initialLoadErrorDisplay) {
-           dom.initialLoadErrorDisplay.style.display = 'block';
+   function createUserElement(username) {
+       const userDiv = document.createElement('div');
+       userDiv.className = 'user-item card'; // Added 'card' for consistency
+
+       const userInfo = document.createElement('div');
+       userInfo.className = 'user-info';
+
+       const userLink = document.createElement('a');
+       userLink.href = `https://www.instagram.com/${username}/`;
+       userLink.textContent = `@${username}`;
+       userLink.target = '_blank'; // Open in new tab
+       userLink.rel = 'noopener noreferrer'; // Security best practice
+
+       userInfo.appendChild(userLink);
+       userDiv.appendChild(userInfo);
+
+       const userActions = document.createElement('div');
+       userActions.className = 'user-actions';
+
+       // --- Unfollow Button (Example - Requires API or manual action) ---
+       // This button doesn't actually unfollow via API anymore.
+       // It could be repurposed or removed. Keeping as a visual placeholder.
+       const unfollowButton = document.createElement('button');
+       unfollowButton.className = 'btn-small unfollow-btn'; // Add specific class if needed
+       unfollowButton.title = `Manually unfollow @${username} on Instagram`;
+       unfollowButton.innerHTML = '<i class="fas fa-user-minus"></i> Unfollow';
+       unfollowButton.onclick = () => {
+            // No actual API call here
+            showToast(`Open Instagram to unfollow @${username}`, 'info');
+            // Optionally open the profile link automatically:
+            // window.open(userLink.href, '_blank');
+       };
+       // userActions.appendChild(unfollowButton); // Uncomment if you want the placeholder button
+
+        // --- Copy Button ---
+       const copyButton = document.createElement('button');
+       copyButton.className = 'btn-small copy-btn';
+       copyButton.title = `Copy @${username} to clipboard`;
+       copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy';
+       copyButton.setAttribute('data-username', username); // Store username for the handler
+       userActions.appendChild(copyButton);
+
+       userDiv.appendChild(userActions);
+
+       return userDiv;
+   }
+
+   /**
+    * Copies the provided username to the clipboard.
+    * @param {string} username - The username to copy.
+    */
+   function copyUsername(username) {
+       navigator.clipboard.writeText(`@${username}`)
+           .then(() => {
+               showToast(`Copied @${username} to clipboard!`, 'success');
+           })
+           .catch(err => {
+               console.error('Failed to copy username: ', err);
+               showToast('Failed to copy username.', 'error');
+           });
+   }
+
+   // -------------------------------------------------------------------------
+   // SECTION: UI Toggles & Features (Theme, Sort, Export, Chart, AI)
+   // -------------------------------------------------------------------------
+
+   /**
+    * Toggles the color theme between light and dark.
+    */
+   function toggleTheme() {
+       state.currentTheme = state.currentTheme === 'light' ? 'dark' : 'light';
+       localStorage.setItem('theme', state.currentTheme);
+       applyTheme();
+   }
+
+   /**
+    * Applies the current theme to the document body.
+    */
+   function applyTheme() {
+       document.body.className = state.currentTheme + '-theme';
+       if (dom.themeToggleButton) {
+            const moonIcon = dom.themeToggleButton.querySelector('.fa-moon');
+            const sunIcon = dom.themeToggleButton.querySelector('.fa-sun');
+            if (moonIcon && sunIcon) {
+                moonIcon.style.display = state.currentTheme === 'light' ? 'inline-block' : 'none';
+                sunIcon.style.display = state.currentTheme === 'dark' ? 'inline-block' : 'none';
+            }
+       }
+       // Update chart colors if chart exists
+       if (state.chartInstance) {
+           renderFollowTimeline(); // Re-render chart with new theme colors
        }
    }
 
-  // -------------------------------------------------------------------------
-  // SECTION: UI Toggles & Features
-  // -------------------------------------------------------------------------
-
-  /**
-   * Toggles the color theme.
-   */
-  function toggleTheme() {
-      state.currentTheme = state.currentTheme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('theme', state.currentTheme);
-      applyTheme();
-      // Re-render chart with new theme colors
-      renderFollowTimeline(true); // Pass true to indicate theme change
-  }
-
-  /**
-   * Applies the current theme to the body.
-   */
-  function applyTheme() {
-      // Remove existing theme classes
-      dom.htmlElement.classList.remove('light-theme', 'dark-theme');
-      // Add the current theme class
-      dom.htmlElement.classList.add(`${state.currentTheme}-theme`);
-      console.log(`Theme applied: ${state.currentTheme}-theme`);
-  }
-
-  /**
-   * Toggles the sort order and re-renders the results.
-   */
-  function toggleSort() {
-      state.sortAsc = !state.sortAsc;
-      sortNonFollowers(); // Re-sort the main list
-      renderResults(); // Re-render the list with the new order
-      updateSortButtonUI();
-      showToast(`Sorted ${state.sortAsc ? 'A-Z' : 'Z-A'}`, 'info');
-  }
 
    /**
-    * Updates the Sort button text and icon based on state.sortAsc.
+    * Toggles the sort order of the results list and re-renders.
     */
-   function updateSortButtonUI() {
-       if (!dom.sortToggleButton || !dom.sortToggleText) return;
-        dom.sortToggleText.textContent = state.sortAsc ? 'Sort A-Z' : 'Sort Z-A';
-        if (state.sortAsc) {
-            dom.sortToggleButton.classList.add('asc');
+   function toggleSort() {
+       state.sortAsc = !state.sortAsc;
+       // Update button text/icon
+       if (dom.sortToggleButton) {
+           const icon = dom.sortToggleButton.querySelector('i');
+           if (state.sortAsc) {
+               dom.sortToggleButton.innerHTML = '<i class="fas fa-sort-alpha-down"></i> Sort A-Z';
+               if (icon) icon.className = 'fas fa-sort-alpha-down';
+           } else {
+               dom.sortToggleButton.innerHTML = '<i class="fas fa-sort-alpha-up"></i> Sort Z-A';
+                if (icon) icon.className = 'fas fa-sort-alpha-up';
+           }
+       }
+       renderResults(); // Re-render the list with the new sort order
+   }
+
+   /**
+    * Displays the export modal.
+    */
+   function showExportModal() {
+        if (state.nonFollowers.length === 0) {
+           showToast("No non-followers to export.", "info");
+           return;
+        }
+       if (dom.exportModal) {
+           dom.exportModal.style.display = 'block';
+           updateExportPreview(); // Show initial preview
+       }
+   }
+
+   /**
+    * Updates the preview in the export modal based on selected options.
+    */
+    function updateExportPreview() {
+        if (!dom.exportPreview || !dom.exportFormatSelect) return;
+
+        const format = dom.exportFormatSelect.value;
+        const clean = dom.exportCleanUsernamesCheckbox?.checked || false;
+        // Include dates functionality is placeholder for now
+        // const includeDates = dom.exportIncludeDatesCheckbox?.checked || false;
+
+        // Get a sample of users for preview (e.g., first 5)
+        const previewUsers = state.nonFollowers.slice(0, 5);
+        let previewText = '';
+
+        if (previewUsers.length === 0) {
+            previewText = "[No non-followers to preview]";
         } else {
-            dom.sortToggleButton.classList.remove('asc');
+            const processedUsers = previewUsers.map(user => clean ? user : `@${user}`);
+
+            switch (format) {
+                case 'txt':
+                    previewText = processedUsers.join('\n');
+                    break;
+                case 'csv':
+                    // Basic CSV: just a list of usernames
+                    previewText = "Username\n" + processedUsers.join('\n');
+                    break;
+                case 'json':
+                    // Simple JSON array
+                    previewText = JSON.stringify(processedUsers, null, 2);
+                    break;
+                default:
+                    previewText = "[Invalid format selected]";
+            }
         }
-   }
 
-  /**
-   * Shows the export modal.
-   */
-  function showExportModal() {
-      if (state.nonFollowers.length === 0) {
-          showToast("No non-followers to export.", "info");
-          return;
-      }
-      if (dom.exportModal) {
-          updateExportPreview(); // Generate initial preview
-          dom.exportModal.style.display = 'block';
-      }
-  }
+        dom.exportPreview.textContent = previewText;
+    }
 
-   /** Hides the export modal */
-   function hideExportModal() {
-        if (dom.exportModal) {
-            dom.exportModal.style.display = 'none';
-        }
-   }
+   /**
+    * Performs the export based on modal selections.
+    */
+   function performExport() {
+       if (!dom.exportFormatSelect) return;
 
+       const format = dom.exportFormatSelect.value;
+       const clean = dom.exportCleanUsernamesCheckbox?.checked || false;
+       // Placeholder: const includeDates = dom.exportIncludeDatesCheckbox?.checked || false;
 
-  /**
-   * Generates the text content for export based on options.
-   * @returns {string} - Formatted text for export/preview.
-   */
-  function generateExportContent() {
-      const format = dom.exportFormatSelect ? dom.exportFormatSelect.value : 'txt';
-      const cleanUsernames = dom.exportCleanUsernamesCheckbox ? dom.exportCleanUsernamesCheckbox.checked : false;
-      // const includeDates = dom.exportIncludeDatesCheckbox ? dom.exportIncludeDatesCheckbox.checked : false; // Add later if needed
+       const usersToExport = state.nonFollowers.map(user => clean ? user : `@${user}`);
 
-      let content = '';
-      const usersToExport = state.nonFollowers.map(user => cleanUsernames ? user : `@${user}`);
-
-      switch (format) {
-          case 'csv':
-              content = `Username\n${usersToExport.join('\n')}`;
-              break;
-          case 'json':
-              content = JSON.stringify({ nonFollowers: usersToExport }, null, 2);
-              break;
-          case 'txt':
-          default:
-              content = usersToExport.join('\n');
-              break;
-      }
-      return content;
-  }
-
-  /**
-   * Updates the export preview text area.
-   */
-  function updateExportPreview() {
-      if (!dom.exportPreview || !dom.exportModal || dom.exportModal.style.display === 'none') return;
-
-      const previewContent = generateExportContent();
-      // Show only a portion in the preview
-      const previewLines = previewContent.split('\n');
-      const maxPreviewLines = 10;
-       if (previewLines.length > maxPreviewLines) {
-           dom.exportPreview.textContent = previewLines.slice(0, maxPreviewLines).join('\n') + '\n...';
-       } else {
-           dom.exportPreview.textContent = previewContent;
-       }
-  }
-
-  /**
-   * Performs the actual file export.
-   */
-  function performExport() {
-      const format = dom.exportFormatSelect ? dom.exportFormatSelect.value : 'txt';
-      const content = generateExportContent();
-      const blob = new Blob([content], { type: `text/${format === 'json' ? 'json' : (format === 'csv' ? 'csv' : 'plain')};charset=utf-8` });
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `instagram_non_followers_${new Date().toISOString().slice(0, 10)}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      showToast(`Exported as ${format.toUpperCase()} file.`, 'success');
-      hideExportModal();
-  }
-
-  /**
-   * Renders the follow/unfollow timeline chart (using sample data).
-   * @param {boolean} themeChanged - Indicates if this render is due to a theme change.
-   */
-  function renderFollowTimeline(themeChanged = false) {
-       if (typeof Chart === 'undefined') {
-           console.warn("Chart.js is not loaded yet.");
-           if(dom.chartPlaceholder) dom.chartPlaceholder.innerHTML = '<p><i class="fas fa-exclamation-circle"></i> Chart library not loaded.</p>';
+       if (usersToExport.length === 0) {
+           showToast("Nothing to export.", "warning");
            return;
        }
-        if (!dom.timelineCanvas || !dom.chartWrapper) return;
 
-        // Destroy existing chart if it exists, especially on theme change
-       if (state.chartInstance) {
-           state.chartInstance.destroy();
-           state.chartInstance = null;
+       let fileContent = '';
+       let mimeType = '';
+       let fileExtension = '';
+
+       switch (format) {
+           case 'txt':
+               fileContent = usersToExport.join('\n');
+               mimeType = 'text/plain';
+               fileExtension = 'txt';
+               break;
+           case 'csv':
+               // Add header row
+               fileContent = "Username\n" + usersToExport.join('\n');
+               mimeType = 'text/csv';
+               fileExtension = 'csv';
+               break;
+           case 'json':
+               fileContent = JSON.stringify(usersToExport, null, 2);
+               mimeType = 'application/json';
+               fileExtension = 'json';
+               break;
+           default:
+               showToast("Invalid export format selected.", "error");
+               return;
        }
 
-
-       // Hide placeholder, show canvas
-       if(dom.chartPlaceholder) dom.chartPlaceholder.style.display = 'none';
-       dom.timelineCanvas.style.display = 'block';
-
-
-       // --- Sample Data (Replace with real data if available) ---
-       const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
-       const followersData = [10, 15, 12, 18, 25, 22, 30]; // Sample gained
-       const unfollowersData = [-2, -1, -3, 0, -5, -2, -1]; // Sample lost (represented negative for clarity)
-       // --- End Sample Data ---
-
-       // Get theme-specific colors
-       const gridColor = state.currentTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-       const textColor = state.currentTheme === 'dark' ? '#e9ecef' : '#343a40';
-       const followerColor = state.currentTheme === 'dark' ? '#198754' : '#28a745'; // Greenish for followers
-       const unfollowerColor = state.currentTheme === 'dark' ? '#dc3545' : '#dc3545'; // Reddish for unfollowers
-
-
+       // Create and trigger download
        try {
-            const ctx = dom.timelineCanvas.getContext('2d');
-            state.chartInstance = new Chart(ctx, {
-                type: 'line', // Could be 'bar' as well
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'New Followers',
-                            data: followersData,
-                            borderColor: followerColor,
-                            backgroundColor: `${followerColor}80`, // Semi-transparent fill
-                            tension: 0.3,
-                            fill: true,
-                        },
-                        {
-                            label: 'Unfollowers',
-                            data: unfollowersData.map(Math.abs), // Chart positive values for loss
-                            borderColor: unfollowerColor,
-                            backgroundColor: `${unfollowerColor}80`,
-                            tension: 0.3,
-                            fill: true,
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false, // Allow chart to fill container height
-                    plugins: {
-                        legend: {
-                            labels: { color: textColor }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { color: gridColor },
-                            ticks: { color: textColor }
-                        },
-                        y: {
-                            grid: { color: gridColor },
-                            ticks: { color: textColor },
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Number of Users',
-                                color: textColor
-                            }
-                        }
-                    }
-                }
-            });
+           const blob = new Blob([fileContent], { type: mimeType });
+           const url = URL.createObjectURL(blob);
+           const a = document.createElement('a');
+           a.href = url;
+           a.download = `instagram_non_followers_${new Date().toISOString().split('T')[0]}.${fileExtension}`;
+           document.body.appendChild(a);
+           a.click();
+           document.body.removeChild(a);
+           URL.revokeObjectURL(url);
+           showToast(`Exported as ${fileExtension.toUpperCase()}`, "success");
+           if (dom.exportModal) dom.exportModal.style.display = 'none'; // Close modal on success
        } catch (error) {
-            console.error("Failed to create chart:", error);
-            showToast("Failed to render chart.", "error");
-             if(dom.chartPlaceholder) {
-                dom.chartPlaceholder.innerHTML = '<p><i class="fas fa-exclamation-triangle"></i> Error rendering chart.</p>';
-                dom.chartPlaceholder.style.display = 'flex';
-             }
-             dom.timelineCanvas.style.display = 'none';
+           console.error("Export failed:", error);
+           showToast("Export failed. See console for details.", "error");
        }
-  }
+   }
 
-  /**
-   * Generates sample smart suggestions based on data.
+   /**
+   * Renders a sample timeline chart using Chart.js.
+   * Note: Uses placeholder data as actual timestamps aren't in basic JSON.
    */
-  function generateSmartSuggestions() {
-      if (!dom.aiSuggestionsContainer) return;
+  function renderFollowTimeline() {
+    if (!dom.timelineCanvas || typeof Chart === 'undefined') {
+        console.warn("Timeline canvas not found or Chart.js not loaded.");
+        return; // Don't proceed if canvas or Chart.js is missing
+    }
 
-      dom.aiSuggestionsContainer.innerHTML = ''; // Clear previous
-      let suggestionsHtml = '';
+    const ctx = dom.timelineCanvas.getContext('2d');
 
-      if (state.nonFollowers.length === 0 && state.following.size > 0) {
-          suggestionsHtml += `<div class="suggestion"><p><i class="fas fa-check-circle" style="color: var(--success-color);"></i> Great! Everyone you follow also follows you back.</p></div>`;
-      } else if (state.nonFollowers.length > 0) {
-          const percentage = ((state.nonFollowers.length / state.following.size) * 100).toFixed(1);
-          suggestionsHtml += `<div class="suggestion">
-                                <p><i class="fas fa-exclamation-triangle" style="color: var(--accent-color);"></i> You follow <strong>${state.nonFollowers.length}</strong> users (${percentage}%) who don't follow you back.</p>
-                                <button class="btn-small ai-action-btn" onclick="document.getElementById('searchInput').focus();">Search List</button> 
-                              </div>`; // Simple action example
+    // Sample data - replace with real data if available
+    const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const followersData = [10, 25, 15, 30, 20, 40]; // Sample follower gains
+    const unfollowersData = [5, 10, 8, 12, 9, 15]; // Sample unfollows (non-followers detected)
 
-          // Sample Suggestion 2 (Placeholder - Requires more data)
-          // suggestionsHtml += `<div class="suggestion"><p><i class="fas fa-user-clock"></i> Consider reviewing accounts followed long ago that aren't following back.</p></div>`;
-      } else {
-          suggestionsHtml = '<p class="placeholder-text">Upload follower and following files to get suggestions.</p>';
-      }
+    // Destroy previous chart instance if it exists
+    if (state.chartInstance) {
+        state.chartInstance.destroy();
+    }
+
+    // Determine colors based on theme
+    const isDarkMode = state.currentTheme === 'dark';
+    const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+    const labelColor = isDarkMode ? '#e0e0e0' : '#333';
+    const followerColor = '#1abc9c'; // Teal
+    const unfollowerColor = '#e74c3c'; // Red
+
+    state.chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'New Followers (Sample)',
+                data: followersData,
+                borderColor: followerColor,
+                backgroundColor: followerColor + '33', // Semi-transparent fill
+                tension: 0.1,
+                fill: true
+            }, {
+                label: 'Non-Followers Detected (Sample)',
+                data: unfollowersData,
+                borderColor: unfollowerColor,
+                backgroundColor: unfollowerColor + '33', // Semi-transparent fill
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: labelColor }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: gridColor },
+                    ticks: { color: labelColor }
+                },
+                y: {
+                    grid: { color: gridColor },
+                    ticks: { color: labelColor },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
 
 
-      dom.aiSuggestionsContainer.innerHTML = suggestionsHtml;
-  }
+   /**
+    * Generates simple "smart" suggestions based on the data.
+    * (Placeholder implementation)
+    */
+   function generateSmartSuggestions() {
+       if (!dom.aiSuggestionsContainer) return;
 
+       dom.aiSuggestionsContainer.innerHTML = ''; // Clear previous suggestions
+
+       if (state.nonFollowers.length === 0 && (state.followers.size > 0 || state.following.size > 0)) {
+           dom.aiSuggestionsContainer.innerHTML = '<p class="ai-suggestion success"><i class="fas fa-check-circle"></i> Great job! Everyone you follow seems to follow you back.</p>';
+           return;
+       }
+
+       if (state.nonFollowers.length === 0) {
+           dom.aiSuggestionsContainer.innerHTML = '<p class="placeholder-text">Load data to see suggestions.</p>';
+            return;
+       }
+
+       const fragment = document.createDocumentFragment();
+        let suggestionCount = 0;
+
+       // Suggestion 1: High number of non-followers
+       if (state.nonFollowers.length > 50) {
+            suggestionCount++;
+           const suggestionDiv = document.createElement('div');
+           suggestionDiv.className = 'ai-suggestion warning';
+           suggestionDiv.innerHTML = `
+               <i class="fas fa-exclamation-triangle"></i> You have a significant number (${state.nonFollowers.length}) of non-followers. Consider reviewing this list.
+               <button class="btn-small ai-action-btn" data-action="focus-search" title="Focus search bar"><i class="fas fa-search"></i> Review List</button>
+           `;
+           fragment.appendChild(suggestionDiv);
+       }
+
+       // Suggestion 2: Follow/Following Ratio (Example)
+       const ratio = state.followers.size / (state.following.size || 1); // Avoid division by zero
+       if (state.following.size > 0 && ratio < 0.8) { // Example threshold: following significantly more than followers
+           suggestionCount++;
+           const suggestionDiv = document.createElement('div');
+           suggestionDiv.className = 'ai-suggestion info';
+           suggestionDiv.innerHTML = `
+               <i class="fas fa-balance-scale-right"></i> Your follower/following ratio is ${ratio.toFixed(2)}. You're following quite a few more people than follow you back.
+           `;
+            fragment.appendChild(suggestionDiv);
+       }
+
+       // Suggestion 3: Offer export
+        if (state.nonFollowers.length > 0) {
+            suggestionCount++;
+           const suggestionDiv = document.createElement('div');
+           suggestionDiv.className = 'ai-suggestion';
+           suggestionDiv.innerHTML = `
+               <i class="fas fa-file-export"></i> You can export the list of ${state.nonFollowers.length} non-followers for external use.
+               <button class="btn-small ai-action-btn" data-action="open-export" title="Open export options"><i class="fas fa-download"></i> Export Now</button>
+           `;
+            fragment.appendChild(suggestionDiv);
+        }
+
+       // Add a default message if no specific suggestions triggered
+       if (suggestionCount === 0 && state.nonFollowers.length > 0) {
+           const suggestionDiv = document.createElement('div');
+           suggestionDiv.className = 'ai-suggestion';
+           suggestionDiv.innerHTML = `<i class="fas fa-list-ul"></i> Found ${state.nonFollowers.length} users who don't follow you back.`;
+           fragment.appendChild(suggestionDiv);
+       }
+
+
+       dom.aiSuggestionsContainer.appendChild(fragment);
+   }
+
+   /**
+    * Handles actions triggered by buttons within AI suggestions.
+    * @param {string} actionName - The value of the data-action attribute.
+    */
+   function handleAiAction(actionName) {
+       switch(actionName) {
+           case 'focus-search':
+               dom.searchInput?.focus();
+               showToast("Search bar focused.", "info");
+               break;
+           case 'open-export':
+               showExportModal();
+               break;
+           // Add more cases for other actions
+           default:
+               console.warn("Unknown AI action:", actionName);
+       }
+   }
+
+   // -------------------------------------------------------------------------
+   // SECTION: Utility Functions (Loader, Error Handling, Toast, Debounce)
+   // -------------------------------------------------------------------------
+
+   /**
+    * Shows the loading indicator.
+    */
+   function showLoader() {
+       if (dom.container && !dom.container.querySelector('.loader')) {
+            // Insert loader at the beginning of the container
+            dom.container.insertAdjacentHTML('afterbegin', LOADER_HTML);
+            state.isDataProcessing = true; // Also set state flag
+       }
+   }
+
+   /**
+    * Clears the loading indicator.
+    */
+   function clearLoader() {
+       const loader = dom.container ? dom.container.querySelector('.loader') : null;
+       if (loader) {
+           loader.remove();
+       }
+       state.isDataProcessing = false; // Clear state flag
+   }
+
+   /**
+    * Displays an error message in the main container.
+    * @param {string} message - The error message to display.
+    * @param {boolean} clearPrevious - Whether to clear previous content. Defaults to true.
+    */
+   function showError(message, clearPrevious = true) {
+       console.error("Error:", message);
+       if (dom.container) {
+           if(clearPrevious) dom.container.innerHTML = ''; // Clear previous content like loader or results
+           const errorElement = document.createElement('p');
+           errorElement.className = 'error';
+           errorElement.textContent = `Error: ${message}`;
+           dom.container.appendChild(errorElement);
+       }
+       showToast(message, "error"); // Show toast notification as well
+   }
+
+    /**
+    * Creates the container for toast notifications if it doesn't exist.
+    */
+   function createToastContainer() {
+       if (!dom.toastContainer) {
+           dom.toastContainer = document.createElement('div');
+           dom.toastContainer.id = 'toast-container';
+           document.body.appendChild(dom.toastContainer);
+       }
+   }
+
+   /**
+    * Shows a toast notification.
+    * @param {string} message - The message to display.
+    * @param {'info' | 'success' | 'warning' | 'error'} type - The type of toast.
+    * @param {number} duration - How long to display the toast in ms.
+    */
+   function showToast(message, type = 'info', duration = 3000) {
+        if (!dom.toastContainer) createToastContainer(); // Ensure container exists
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+
+        // Add icon based on type
+        let iconClass = 'fas fa-info-circle'; // Default to info
+        if (type === 'success') iconClass = 'fas fa-check-circle';
+        else if (type === 'warning') iconClass = 'fas fa-exclamation-triangle';
+        else if (type === 'error') iconClass = 'fas fa-times-circle';
+
+        toast.innerHTML = `<i class="${iconClass}"></i> ${message}`;
+
+        dom.toastContainer.appendChild(toast);
+
+        // Trigger fade in animation (optional, needs CSS)
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        // Remove toast after duration
+        setTimeout(() => {
+            toast.classList.remove('show');
+            // Remove element after fade out animation completes
+            toast.addEventListener('transitionend', () => toast.remove());
+            // Fallback removal if no transition
+            setTimeout(() => {
+                 if (toast.parentNode === dom.toastContainer) {
+                    toast.remove();
+                 }
+            }, 500); // Wait for potential CSS transition
+        }, duration);
+    }
+
+   /**
+    * Debounce function to limit the rate at which a function can fire.
+    * @param {Function} func - The function to debounce.
+    * @param {number} wait - The debounce duration in milliseconds.
+    * @returns {Function} - The debounced function.
+    */
+   function debounce(func, wait) {
+       let timeout;
+       return function executedFunction(...args) {
+           const later = () => {
+               clearTimeout(timeout);
+               func(...args);
+           };
+           clearTimeout(timeout);
+           timeout = setTimeout(later, wait);
+       };
+   }
 
   // -------------------------------------------------------------------------
-  // SECTION: Utility Functions (Loader, Toast, Error Handling, Debounce)
-  // -------------------------------------------------------------------------
-
-  /**
-   * Shows a loading indicator in a specified container or globally.
-   * @param {HTMLElement} [container=document.body] - The element to append the loader to.
-   */
-  function showLoader(container = document.body) {
-       // Prevent adding multiple loaders to the same container
-      if (container.querySelector('.loader.absolute')) return;
-
-      const loaderElement = document.createElement('div');
-      loaderElement.className = 'loader absolute'; // Use the styled absolute loader
-      loaderElement.innerHTML = '<div class="loader-inner">Loading...</div>'; // Inner content if needed
-
-       // Ensure container can host an absolute element
-       if (getComputedStyle(container).position === 'static') {
-           container.style.position = 'relative';
-       }
-
-      container.appendChild(loaderElement);
-       if (container === dom.container) { // If loading the main list, hide placeholder
-           if(dom.listPlaceholder) dom.listPlaceholder.style.display = 'none';
-       }
-        if (container === dom.chartWrapper) { // If loading chart, hide canvas
-           if(dom.timelineCanvas) dom.timelineCanvas.style.display = 'none';
-            if(dom.chartPlaceholder) dom.chartPlaceholder.style.display = 'none';
-       }
-  }
-
-  /**
-   * Removes the loading indicator from a container or globally.
-    * @param {HTMLElement} [container=document.body] - The element to remove the loader from.
-   */
-  function clearLoader(container = document.body) {
-      const loader = container.querySelector('.loader.absolute');
-      if (loader) {
-          loader.remove();
-      }
-       // Restore container position if we changed it (optional, depends on layout needs)
-       // if (container.style.position === 'relative') {
-       //     container.style.position = ''; // Reset only if we explicitly set it
-       // }
-
-       // Show chart canvas again if loader was in chart wrapper
-       if (container === dom.chartWrapper && dom.timelineCanvas && state.chartInstance) {
-            dom.timelineCanvas.style.display = 'block';
-       }
-  }
-
-  /**
-   * Shows a toast notification.
-   * @param {string} message - The message to display.
-   * @param {'info' | 'success' | 'error'} type - Type of toast.
-   */
-  function showToast(message, type = 'info') {
-      if (!dom.toastContainer) return;
-
-      const toast = document.createElement('div');
-      toast.className = `toast ${type}`;
-      // Add icons based on type
-      let iconClass = 'fa-info-circle';
-      if (type === 'success') iconClass = 'fa-check-circle';
-      if (type === 'error') iconClass = 'fa-exclamation-triangle';
-
-      toast.innerHTML = `<i class="fas ${iconClass}"></i> ${message}`;
-
-      dom.toastContainer.appendChild(toast);
-
-      // Trigger reflow to enable animation
-      void toast.offsetWidth;
-
-      toast.classList.add('show');
-
-      // Remove toast after duration
-      setTimeout(() => {
-          toast.classList.remove('show');
-          // Remove from DOM after transition ends
-          toast.addEventListener('transitionend', () => toast.remove(), { once: true });
-      }, CONFIG.toastDuration);
-  }
-
-  /**
-   * Shows an error message (console and optional toast).
-   * @param {string} message - The error message.
-   * @param {boolean} [showUserToast=false] - Whether to show a toast to the user.
-   */
-  function showError(message, showUserToast = false) {
-      console.error(message);
-      if (showUserToast) {
-          showToast(message, 'error');
-      }
-       // Maybe display in a dedicated error area on the page too?
-  }
-
-  /**
-   * Debounce function to limit the rate at which a function can fire.
-   * @param {Function} func - The function to debounce.
-   * @param {number} wait - The debounce wait time in milliseconds.
-   * @returns {Function} - The debounced function.
-   */
-  function debounce(func, wait) {
-      let timeout;
-      return function executedFunction(...args) {
-          const later = () => {
-              clearTimeout(timeout);
-              func.apply(this, args);
-          };
-          clearTimeout(timeout);
-          timeout = setTimeout(later, wait);
-      };
-  }
-
-
-  // -------------------------------------------------------------------------
-  // SECTION: App Startup
+  // SECTION: Application Start
   // -------------------------------------------------------------------------
 
   // Wait for the DOM to be fully loaded before initializing
